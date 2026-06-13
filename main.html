@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VOID ECHO</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;overflow:hidden;font-family:'Segoe UI',system-ui,sans-serif}
+
+  #splash{
+    position:fixed;inset:0;background:#000;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    z-index:200;transition:opacity 1.2s;
+  }
+  #splash h1{
+    font-size:clamp(3rem,10vw,6.5rem);font-weight:100;
+    letter-spacing:.55em;color:#fff;text-transform:uppercase;
+    margin-bottom:.18em;
+  }
+  #splash .sub{
+    font-size:clamp(.7rem,1.8vw,.9rem);letter-spacing:.45em;
+    color:rgba(255,255,255,.35);text-transform:uppercase;margin-bottom:3.5rem;
+  }
+  #start-btn{
+    background:transparent;border:1px solid rgba(255,255,255,.3);
+    color:rgba(255,255,255,.7);font-size:.78rem;letter-spacing:.35em;
+    text-transform:uppercase;padding:.9em 2.8em;cursor:pointer;
+    transition:border-color .3s,color .3s;
+  }
+  #start-btn:hover{border-color:#fff;color:#fff}
+
+  #hud{
+    position:fixed;top:0;left:0;right:0;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    padding:20px 28px;pointer-events:none;z-index:90;
+    opacity:0;transition:opacity .8s;
+  }
+  .hud-pill{
+    background:rgba(0,0,0,.55);
+    border:1px solid rgba(255,255,255,.08);
+    color:rgba(255,255,255,.75);
+    padding:8px 18px;border-radius:100px;
+    font-size:12px;letter-spacing:.2em;text-transform:uppercase;
+    backdrop-filter:blur(10px);
+  }
+  #score-pill{font-size:20px;font-weight:300;min-width:90px;text-align:center}
+
+  #toast{
+    position:fixed;bottom:18%;left:50%;transform:translateX(-50%);
+    color:#fff;font-size:14px;letter-spacing:.3em;text-transform:uppercase;
+    pointer-events:none;z-index:90;opacity:0;transition:opacity .4s;
+    text-shadow:0 0 20px currentColor;
+  }
+
+  #ctrl-hint{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    color:rgba(255,255,255,.22);font-size:10px;letter-spacing:.25em;
+    text-transform:uppercase;pointer-events:none;z-index:90;
+    transition:opacity 1s;
+  }
+
+  #game-over{
+    position:fixed;inset:0;background:rgba(0,0,0,.88);
+    display:none;flex-direction:column;align-items:center;justify-content:center;
+    z-index:210;
+  }
+  #game-over h2{
+    font-size:clamp(2rem,8vw,4.5rem);font-weight:100;letter-spacing:.4em;
+    color:#fff;text-transform:uppercase;margin-bottom:.3em;
+  }
+  #final-score{font-size:clamp(1rem,3vw,1.5rem);letter-spacing:.3em;
+    color:rgba(255,255,255,.45);text-transform:uppercase;margin-bottom:3rem}
+  #retry-btn{
+    background:transparent;border:1px solid rgba(255,255,255,.3);
+    color:rgba(255,255,255,.7);font-size:.75rem;letter-spacing:.3em;
+    text-transform:uppercase;padding:.85em 2.6em;cursor:pointer;
+    transition:border-color .3s,color .3s;
+  }
+  #retry-btn:hover{border-color:#fff;color:#fff}
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <h1>Void Echo</h1>
+  <p class="sub">deflect the echoes — survive the void</p>
+  <button id="start-btn" onclick="startGame()">Enter</button>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="hud-pill">♥ <span id="lives">3</span></div>
+  <div class="hud-pill" id="score-pill"><span id="score">0</span></div>
+  <div class="hud-pill">Wave <span id="wave">1</span></div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- GAME OVER -->
+<div id="game-over">
+  <h2>Echo Fades</h2>
+  <div id="final-score">Score: 0</div>
+  <button id="retry-btn" onclick="retryGame()">Try Again</button>
+</div>
+
+<!-- CONTROLS HINT -->
+<div id="ctrl-hint">Click / Trigger — Deflect &nbsp;|&nbsp; Quest: Pinch or Grip — Deflect &nbsp;|&nbsp; Enter VR for hand tracking</div>
+
+<!-- A-FRAME SCENE -->
+<a-scene
+  id="main-scene"
+  vr-mode-ui="enabled:true"
+  renderer="antialias:true;colorManagement:true"
+  background="color:#000"
+  fog="type:exponential;color:#000;density:0.018"
+>
+
+  <!-- ASSETS -->
+  <a-assets>
+    <a-mixin id="orb-base"
+      geometry="primitive:icosahedron;detail:1;radius:0.38"
+      animation__spin="property:rotation;to:360 200 90;loop:true;dur:4000;easing:linear">
+    </a-mixin>
+  </a-assets>
+
+  <!-- AMBIENT / SCENE LIGHTS -->
+  <a-light type="ambient" color="#080818" intensity="1"></a-light>
+  <!-- Subtle fill lights in 3 colors to rim everything beautifully -->
+  <a-light type="point" color="#1a00ff" intensity="0.35" distance="25" position="-8 4 -5"></a-light>
+  <a-light type="point" color="#ff0066" intensity="0.28" distance="22" position=" 8 3 -5"></a-light>
+  <a-light type="point" color="#00ffcc" intensity="0.22" distance="18" position=" 0 6 -3"></a-light>
+
+  <!-- VOID FLOOR — barely visible grid -->
+  <a-entity id="void-floor">
+    <a-plane rotation="-90 0 0" width="40" height="40" position="0 -2 -10"
+      material="color:#0a0a18;roughness:1;opacity:0.9;transparent:true;wireframe:false">
+    </a-plane>
+    <!-- Grid lines via thin boxes -->
+  </a-entity>
+
+  <!-- STAR FIELD -->
+  <a-entity id="stars"></a-entity>
+
+  <!-- RINGS — decorative depth rings around player -->
+  <a-entity id="rings"></a-entity>
+
+  <!-- ORBS container -->
+  <a-entity id="orbs"></a-entity>
+
+  <!-- DEFLECT PARTICLES -->
+  <a-entity id="fx"></a-entity>
+
+  <!-- SHIELD INDICATOR — glowing ring in front of player -->
+  <a-entity id="shield-ring" position="0 1.6 -1.8">
+    <a-torus radius="0.9" tube="0.025"
+      material="color:#ffffff;emissive:#4488ff;emissiveIntensity:0.55;opacity:0.25;transparent:true"
+      animation="property:rotation;from:0 0 0;to:0 360 0;loop:true;dur:12000;easing:linear"
+      animation__pulse="property:material.opacity;from:0.15;to:0.38;loop:true;dur:2000;dir:alternate;easing:easeInOutSine">
+    </a-torus>
+    <a-torus radius="0.9" tube="0.015" rotation="90 0 0"
+      material="color:#ffffff;emissive:#ff44aa;emissiveIntensity:0.4;opacity:0.18;transparent:true"
+      animation="property:rotation;from:90 0 0;to:90 0 360;loop:true;dur:8000;easing:linear">
+    </a-torus>
+  </a-entity>
+
+  <!-- PLAYER RIG -->
+  <a-entity id="rig" position="0 0 0">
+
+    <!-- Camera -->
+    <a-camera id="cam"
+      look-controls="pointerLockEnabled:true"
+      wasd-controls="enabled:false"
+      position="0 1.6 0">
+      <!-- Desktop cursor click-to-deflect -->
+      <a-entity cursor="fuse:false;rayOrigin:mouse"
+        raycaster="objects:.orb-target;far:30"
+        position="0 0 -1"
+        geometry="primitive:ring;radiusInner:0.006;radiusOuter:0.011"
+        material="color:white;shader:flat;opacity:0.55">
+      </a-entity>
+    </a-camera>
+
+    <!-- LEFT HAND — hand tracking + controller -->
+    <a-entity id="lhand"
+      hand-controls="hand:left;handModelStyle:lowPoly;color:#aaaacc"
+      hand-tracking-controls="hand:left;modelStyle:dots;modelColor:#8888ee"
+      deflect-hand="hand:left">
+    </a-entity>
+
+    <!-- RIGHT HAND — hand tracking + controller -->
+    <a-entity id="rhand"
+      hand-controls="hand:right;handModelStyle:lowPoly;color:#aaaacc"
+      hand-tracking-controls="hand:right;modelStyle:dots;modelColor:#8888ee"
+      deflect-hand="hand:right">
+    </a-entity>
+
+  </a-entity>
+
+</a-scene>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+//  GAME STATE
+// ══════════════════════════════════════════════════════════════
+const G = {
+  score: 0, lives: 3, wave: 1,
+  running: false, vrMode: false,
+  orbSpeed: 1.4, spawnRate: 2800,
+  orbsAlive: [], spawnTimer: null,
+  waveTimer: null, toastTimer: null,
+  combo: 0, comboTimer: null,
+};
+
+const ORB_PALETTE = [
+  { col:'#00ffe0', emissive:'#00ccaa', light:'#00ffcc' },
+  { col:'#ff44aa', emissive:'#cc1166', light:'#ff0077' },
+  { col:'#4488ff', emissive:'#2244cc', light:'#2266ff' },
+  { col:'#ffdd00', emissive:'#bb9900', light:'#ffcc00' },
+  { col:'#cc44ff', emissive:'#8800cc', light:'#aa00ff' },
+  { col:'#ff8820', emissive:'#cc5500', light:'#ff6600' },
+];
+
+// ══════════════════════════════════════════════════════════════
+//  STAR FIELD
+// ══════════════════════════════════════════════════════════════
+function buildStars() {
+  const el = document.getElementById('stars');
+  for (let i = 0; i < 320; i++) {
+    const s = document.createElement('a-sphere');
+    const r = 0.012 + Math.random() * 0.022;
+    const theta = Math.random() * Math.PI * 2;
+    const phi   = Math.acos(2 * Math.random() - 1);
+    const dist  = 28 + Math.random() * 10;
+    s.setAttribute('radius', r);
+    s.setAttribute('position',
+      `${dist*Math.sin(phi)*Math.cos(theta)} ${dist*Math.sin(phi)*Math.sin(theta)} ${dist*Math.cos(phi)}`);
+    s.setAttribute('material',
+      `color:#fff;emissive:#aaddff;emissiveIntensity:${0.4+Math.random()*0.6};roughness:1`);
+    el.appendChild(s);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  DEPTH RINGS (aesthetic)
+// ══════════════════════════════════════════════════════════════
+function buildRings() {
+  const el = document.getElementById('rings');
+  const zPos = [-6, -12, -18, -24];
+  const cols = ['#1a00ff','#ff0066','#00ffcc','#ff8800'];
+  zPos.forEach((z, i) => {
+    const ring = document.createElement('a-torus');
+    const radius = 3.5 + i * 0.8;
+    ring.setAttribute('position', `0 1.6 ${z}`);
+    ring.setAttribute('radius', radius);
+    ring.setAttribute('tube', '0.02');
+    ring.setAttribute('material',
+      `color:${cols[i]};emissive:${cols[i]};emissiveIntensity:0.4;opacity:${0.12 - i*0.02};transparent:true`);
+    ring.setAttribute('animation',
+      `property:rotation;from:0 0 0;to:0 0 360;loop:true;dur:${18000+i*5000};easing:linear`);
+    el.appendChild(ring);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+//  ORB SPAWNING
+// ══════════════════════════════════════════════════════════════
+function spawnOrb() {
+  if (!G.running) return;
+  const palette = ORB_PALETTE[Math.floor(Math.random() * ORB_PALETTE.length)];
+
+  // Spawn in a hemisphere in front of player, varied directions
+  const spreadX = (Math.random() - 0.5) * 5;
+  const spreadY = 0.8 + Math.random() * 2.8;
+  const spawnZ  = -22 - Math.random() * 6;
+
+  // Direction toward player origin (slight variance)
+  const targetX = (Math.random() - 0.5) * 1.2;
+  const targetY = 1.4 + (Math.random() - 0.5) * 0.8;
+  const dx = targetX - spreadX;
+  const dy = targetY - spreadY;
+  const dz = 0 - spawnZ;
+  const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  const speed = G.orbSpeed;
+  const vel = { x: dx/len*speed, y: dy/len*speed, z: dz/len*speed };
+
+  // Entity
+  const orb = document.createElement('a-entity');
+  orb.setAttribute('position', `${spreadX} ${spreadY} ${spawnZ}`);
+  orb.classList.add('orb-target');
+  orb.dataset.alive = 'true';
+
+  // Core icosahedron
+  const core = document.createElement('a-icosahedron');
+  core.setAttribute('detail', '1');
+  core.setAttribute('radius', '0.38');
+  core.setAttribute('material',
+    `color:${palette.col};emissive:${palette.emissive};emissiveIntensity:0.7;roughness:0.1;metalness:0.6;wireframe:false`);
+  core.setAttribute('animation',
+    `property:rotation;to:360 200 90;loop:true;dur:${3000+Math.random()*2000};easing:linear`);
+
+  // Wireframe shell
+  const shell = document.createElement('a-icosahedron');
+  shell.setAttribute('detail', '1');
+  shell.setAttribute('radius', '0.45');
+  shell.setAttribute('material',
+    `color:${palette.col};emissive:${palette.emissive};emissiveIntensity:0.3;opacity:0.22;transparent:true;wireframe:true`);
+  shell.setAttribute('animation',
+    `property:rotation;from:0 0 0;to:-360 -160 0;loop:true;dur:${5000+Math.random()*3000};easing:linear`);
+
+  // Glow light
+  const glow = document.createElement('a-light');
+  glow.setAttribute('type', 'point');
+  glow.setAttribute('color', palette.light);
+  glow.setAttribute('intensity', '0.6');
+  glow.setAttribute('distance', '4');
+  glow.setAttribute('animation',
+    `property:intensity;from:0.4;to:0.9;loop:true;dur:${800+Math.random()*600};dir:alternate;easing:easeInOutSine`);
+
+  orb.appendChild(core);
+  orb.appendChild(shell);
+  orb.appendChild(glow);
+  document.getElementById('orbs').appendChild(orb);
+
+  // Click to deflect on desktop / laser pointer on VR
+  orb.addEventListener('click', () => deflectOrb(orb, palette));
+
+  const entry = { el: orb, vel, palette, px: spreadX, py: spreadY, pz: spawnZ, born: Date.now() };
+  G.orbsAlive.push(entry);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  ORB PHYSICS LOOP
+// ══════════════════════════════════════════════════════════════
+let lastT = performance.now();
+function orbTick(now) {
+  const dt = Math.min((now - lastT) / 1000, 0.05);
+  lastT = now;
+  if (!G.running) { requestAnimationFrame(orbTick); return; }
+
+  for (let i = G.orbsAlive.length - 1; i >= 0; i--) {
+    const o = G.orbsAlive[i];
+    if (!o.el.parentNode) { G.orbsAlive.splice(i,1); continue; }
+
+    o.px += o.vel.x * dt;
+    o.py += o.vel.y * dt;
+    o.pz += o.vel.z * dt;
+    o.el.setAttribute('position', `${o.px} ${o.py} ${o.pz}`);
+
+    // Passed the player (z > 1.5) = miss
+    if (o.pz > 1.5 && o.el.dataset.alive === 'true') {
+      o.el.dataset.alive = 'false';
+      removeOrb(o, i);
+      loseLife();
+    }
+    // Too old
+    if (Date.now() - o.born > 14000) {
+      if (o.el.dataset.alive === 'true') { loseLife(); }
+      removeOrb(o, i);
+    }
+  }
+  requestAnimationFrame(orbTick);
+}
+requestAnimationFrame(orbTick);
+
+function removeOrb(o, idx) {
+  if (o.el.parentNode) o.el.parentNode.removeChild(o.el);
+  G.orbsAlive.splice(idx, 1);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  DEFLECT
+// ══════════════════════════════════════════════════════════════
+function deflectOrb(orbEl, palette) {
+  if (orbEl.dataset.alive !== 'true') return;
+  orbEl.dataset.alive = 'false';
+
+  const pos = orbEl.getAttribute('position');
+  if (!pos) return;
+
+  // Find and remove from alive list
+  const idx = G.orbsAlive.findIndex(o => o.el === orbEl);
+  if (idx !== -1) G.orbsAlive.splice(idx, 1);
+
+  // Score with combo
+  G.combo++;
+  clearTimeout(G.comboTimer);
+  G.comboTimer = setTimeout(() => { G.combo = 0; }, 2000);
+
+  const pts = G.combo >= 5 ? 50 : G.combo >= 3 ? 30 : 10;
+  G.score += pts;
+  updateHUD();
+
+  const msg = G.combo >= 5 ? '✦ PERFECT ✦' : G.combo >= 3 ? '◈ CHAIN ◈' : null;
+  if (msg) toast(msg, palette.col);
+
+  // Burst FX
+  spawnBurst(pos.x, pos.y, pos.z, palette);
+
+  // Remove orb
+  if (orbEl.parentNode) orbEl.parentNode.removeChild(orbEl);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  BURST FX
+// ══════════════════════════════════════════════════════════════
+function spawnBurst(x, y, z, palette) {
+  const fx = document.getElementById('fx');
+  const count = 10;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('a-sphere');
+    p.setAttribute('radius', 0.04 + Math.random() * 0.07);
+    p.setAttribute('position', `${x} ${y} ${z}`);
+    p.setAttribute('material',
+      `color:${palette.col};emissive:${palette.emissive};emissiveIntensity:0.9;roughness:0.1`);
+    const tx = x + (Math.random()-0.5)*3.5;
+    const ty = y + (Math.random()-0.5)*3 + 0.5;
+    const tz = z + (Math.random()-0.5)*3;
+    p.setAttribute('animation', `property:position;to:${tx} ${ty} ${tz};dur:600;easing:easeOutCubic`);
+    p.setAttribute('animation__fade', 'property:scale;to:0 0 0;dur:600;easing:easeInCubic');
+    fx.appendChild(p);
+    setTimeout(() => { if(p.parentNode) p.parentNode.removeChild(p); }, 650);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  HAND DEFLECT COMPONENT
+// ══════════════════════════════════════════════════════════════
+AFRAME.registerComponent('deflect-hand', {
+  schema: { hand: { default: 'right' } },
+  init() {
+    this.handPos = new THREE.Vector3();
+    this.prevPos = new THREE.Vector3();
+    this.vel     = new THREE.Vector3();
+    this.lastDeflect = 0;
+
+    // Trigger / pinch events for controller
+    this.el.addEventListener('triggerdown',  () => this.tryDeflectNearby());
+    this.el.addEventListener('gripdown',     () => this.tryDeflectNearby());
+    // Hand tracking pinch
+    this.el.addEventListener('pinchstarted', () => this.tryDeflectNearby());
+    this.el.addEventListener('pinchended',   () => {});
+    // Model fist = deflect
+    this.el.addEventListener('gesture', evt => {
+      if (evt.detail?.gesture === 'fist') this.tryDeflectNearby();
+    });
+  },
+  tick(time, delta) {
+    this.el.object3D.getWorldPosition(this.handPos);
+    // Check proximity sweep — hit any orb within 0.7m of hand
+    const now = Date.now();
+    if (now - this.lastDeflect < 80) return; // debounce
+
+    const vel = new THREE.Vector3(
+      this.handPos.x - this.prevPos.x,
+      this.handPos.y - this.prevPos.y,
+      this.handPos.z - this.prevPos.z
+    );
+    const handSpeed = vel.length() / (delta / 1000 || 0.016);
+
+    // Only deflect on fast swipe (natural hand motion in VR)
+    if (handSpeed > 1.8) {
+      this.tryDeflectNearby(true);
+    }
+    this.prevPos.copy(this.handPos);
+  },
+  tryDeflectNearby(isSweep) {
+    const RADIUS = isSweep ? 0.65 : 0.75;
+    let closest = null, closestDist = Infinity;
+    for (const o of G.orbsAlive) {
+      if (o.el.dataset.alive !== 'true') continue;
+      const op = o.el.getAttribute('position');
+      if (!op) continue;
+      const dx = this.handPos.x - op.x;
+      const dy = this.handPos.y - op.y;
+      const dz = this.handPos.z - op.z;
+      const d = Math.sqrt(dx*dx+dy*dy+dz*dz);
+      if (d < RADIUS && d < closestDist) { closest = o; closestDist = d; }
+    }
+    if (closest) {
+      this.lastDeflect = Date.now();
+      deflectOrb(closest.el, closest.palette);
+      // Haptic
+      const gamepad = this.el.components?.['hand-controls']?.controller?.gamepad;
+      if (gamepad?.hapticActuators?.[0]) gamepad.hapticActuators[0].pulse(0.5, 60);
+    }
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  LIVES / WAVE
+// ══════════════════════════════════════════════════════════════
+function loseLife() {
+  G.lives--;
+  G.combo = 0;
+  updateHUD();
+  flashVoid('#ff0033');
+  toast('◉ MISS', '#ff4455');
+  if (G.lives <= 0) endGame();
+}
+
+function flashVoid(color) {
+  const sky = document.querySelector('a-sky') || document.createElement('a-sky');
+  sky.setAttribute('color', color);
+  setTimeout(() => sky.setAttribute('color', '#000'), 180);
+}
+
+function advanceWave() {
+  G.wave++;
+  G.orbSpeed  = 1.4 + (G.wave - 1) * 0.25;
+  G.spawnRate = Math.max(900, 2800 - (G.wave - 1) * 280);
+  updateHUD();
+  toast(`· WAVE ${G.wave} ·`, '#ffffff');
+  restartSpawn();
+}
+
+function restartSpawn() {
+  clearInterval(G.spawnTimer);
+  G.spawnTimer = setInterval(spawnOrb, G.spawnRate);
+  // Also spawn burst at wave start
+  for (let i = 0; i < G.wave; i++) setTimeout(spawnOrb, i * 400);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  HUD HELPERS
+// ══════════════════════════════════════════════════════════════
+function updateHUD() {
+  document.getElementById('score').textContent = G.score;
+  document.getElementById('lives').textContent = '♥'.repeat(Math.max(0, G.lives));
+  document.getElementById('wave').textContent  = G.wave;
+}
+
+function toast(text, color) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.style.color  = color || '#fff';
+  el.style.opacity = '1';
+  clearTimeout(G.toastTimer);
+  G.toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 1600);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  GAME FLOW
+// ══════════════════════════════════════════════════════════════
+function startGame() {
+  const splash = document.getElementById('splash');
+  splash.style.opacity = '0';
+  setTimeout(() => { splash.style.display = 'none'; }, 1200);
+  setTimeout(() => {
+    document.getElementById('hud').style.opacity = '1';
+    G.running = true;
+    G.score = 0; G.lives = 3; G.wave = 1;
+    G.orbSpeed = 1.4; G.spawnRate = 2800;
+    updateHUD();
+    restartSpawn();
+    G.waveTimer = setInterval(() => advanceWave(), 22000);
+    toast('· BEGIN ·', '#00ffcc');
+  }, 1300);
+
+  // Lock pointer desktop
+  document.querySelector('a-scene').canvas?.requestPointerLock?.();
+}
+
+function endGame() {
+  G.running = false;
+  clearInterval(G.spawnTimer);
+  clearInterval(G.waveTimer);
+  G.orbsAlive.forEach(o => { if(o.el.parentNode) o.el.parentNode.removeChild(o.el); });
+  G.orbsAlive.length = 0;
+
+  const go = document.getElementById('game-over');
+  document.getElementById('final-score').textContent = `Score: ${G.score}   Wave: ${G.wave}`;
+  go.style.display = 'flex';
+}
+
+function retryGame() {
+  document.getElementById('game-over').style.display = 'none';
+  G.score = 0; G.lives = 3; G.wave = 1; G.combo = 0;
+  G.orbSpeed = 1.4; G.spawnRate = 2800;
+  updateHUD();
+  G.running = true;
+  restartSpawn();
+  G.waveTimer = setInterval(() => advanceWave(), 22000);
+  toast('· BEGIN ·', '#00ffcc');
+}
+
+// ══════════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════════
+document.querySelector('a-scene').addEventListener('loaded', () => {
+  buildStars();
+  buildRings();
+});
+
+document.querySelector('a-scene').addEventListener('enter-vr', () => { G.vrMode = true; });
+document.querySelector('a-scene').addEventListener('exit-vr',  () => { G.vrMode = false; });
+
+// Fade hint after 8s
+setTimeout(() => {
+  const h = document.getElementById('ctrl-hint');
+  if (h) h.style.opacity = '0';
+}, 8000);
+</script>
+</body>
+</html>
